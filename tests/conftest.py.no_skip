@@ -1,0 +1,128 @@
+"""Temporary conftest file that doesn't skip tests for testing purposes."""
+
+import pytest
+import pytest_asyncio
+import asyncio
+import sys
+import unittest.mock as mock
+from utils.contacts import ContactsModule
+from utils.notes import NotesModule
+from utils.mail import MailModule
+from utils.message import MessageModule
+from utils.reminders import RemindersModule
+from utils.calendar import CalendarModule
+from utils.maps import MapsModule
+
+@pytest_asyncio.fixture(scope="module")
+def event_loop():
+    """Create an event loop for the test module."""
+    loop = asyncio.get_event_loop_policy().new_event_loop()
+    yield loop
+    loop.close()
+
+@pytest_asyncio.fixture(scope="module")
+async def contacts():
+    """Create a mocked ContactsModule instance."""
+    module = ContactsModule()
+    
+    # Mock the check_contacts_access method to return True
+    module.check_contacts_access = mock.AsyncMock(return_value=True)
+    
+    # Mock the module methods to return test data
+    module.get_all_numbers = mock.AsyncMock(return_value={
+        "contacts": [
+            {"name": "John Doe", "phones": ["123-456-7890"]},
+            {"name": "Jane Smith", "phones": ["987-654-3210"]}
+        ]
+    })
+    
+    module.find_number = mock.AsyncMock(return_value=[
+        {"name": "John Doe", "phones": ["123-456-7890"]}
+    ])
+    
+    module.find_contact_by_phone = mock.AsyncMock(return_value={
+        "success": True,
+        "name": "John Doe"
+    })
+    
+    return module
+
+@pytest_asyncio.fixture(scope="module")
+async def notes():
+    """Create a mocked NotesModule instance."""
+    module = NotesModule()
+    
+    # Mock the check_notes_access method to return True
+    module.check_notes_access = mock.AsyncMock(return_value=True)
+    
+    # Mock the module methods to return test data
+    module.find_notes = mock.AsyncMock(return_value=[
+        {"title": "Test Note", "body": "This is a test note."}
+    ])
+    
+    module.create_note = mock.AsyncMock(return_value={
+        "success": True,
+        "note_id": "12345"
+    })
+    
+    module.get_all_notes = mock.AsyncMock(return_value=[
+        {"title": "Test Note 1", "body": "Test note 1 content"},
+        {"title": "Test Note 2", "body": "Test note 2 content"}
+    ])
+    
+    return module
+
+@pytest_asyncio.fixture(scope="module")
+async def mail():
+    """Create a mocked MailModule instance."""
+    module = MailModule()
+    
+    # Mock the check_mail_access method to return True
+    module.check_mail_access = mock.AsyncMock(return_value=True)
+    
+    # Mock other methods as needed
+    return module
+
+@pytest_asyncio.fixture(scope="module")
+async def messages():
+    """Create a mocked MessagesModule instance."""
+    module = MessageModule()
+    
+    # Mock the check_messages_access method to return True
+    module.check_messages_access = mock.AsyncMock(return_value=True)
+    
+    # Mock other methods as needed
+    return module
+
+@pytest_asyncio.fixture(scope="module")
+async def reminders():
+    """Create a mocked RemindersModule instance."""
+    module = RemindersModule()
+    
+    # Mock the check_reminders_access method to return True
+    module.check_reminders_access = mock.AsyncMock(return_value=True)
+    
+    # Mock other methods as needed
+    return module
+
+@pytest_asyncio.fixture(scope="module")
+async def calendar():
+    """Create a mocked CalendarModule instance."""
+    module = CalendarModule()
+    
+    # Mock the check_calendar_access method to return True
+    module.check_calendar_access = mock.AsyncMock(return_value=True)
+    
+    # Mock other methods as needed
+    return module
+
+@pytest_asyncio.fixture(scope="module")
+async def maps():
+    """Create a mocked MapsModule instance."""
+    module = MapsModule()
+    
+    # Mock the check_maps_access method to return True
+    module.check_maps_access = mock.AsyncMock(return_value=True)
+    
+    # Mock other methods as needed
+    return module
