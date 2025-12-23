@@ -20,6 +20,8 @@ from utils.reminders import RemindersModule
 from utils.calendar import CalendarModule
 from utils.maps import MapsModule
 
+VERSION = "0.0.1"
+
 # Initialize FastMCP server
 mcp = FastMCP(
     "Apple MCP",
