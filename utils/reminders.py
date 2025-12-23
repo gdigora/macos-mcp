@@ -41,87 +41,90 @@ class RemindersModule:
         """Get all reminder lists"""
         script = '''
             tell application "Reminders"
-                set allLists to {}
+                set output to "["
+                set isFirst to true
                 repeat with l in every list
-                    set end of allLists to {
-                        name:name of l,
-                        id:id of l,
-                        color:color of l,
-                        reminder_count:count of (reminders in l)
-                    }
+                    set listName to name of l
+                    set listId to id of l
+                    set reminderCount to count of (reminders in l)
+                    if not isFirst then
+                        set output to output & ","
+                    end if
+                    set output to output & "{\\"name\\":\\"" & listName & "\\",\\"id\\":\\"" & listId & "\\",\\"reminder_count\\":" & reminderCount & "}"
+                    set isFirst to false
                 end repeat
-                return allLists as text
+                set output to output & "]"
+                return output
             end tell
         '''
-        
+
         try:
+            import json
             result = await run_applescript_async(script)
-            lists = parse_applescript_list(result)
-            return [parse_applescript_record(lst) for lst in lists]
+            return json.loads(result)
         except AppleScriptError as e:
             logger.error(f"Error getting reminder lists: {e}")
             return []
+        except json.JSONDecodeError as e:
+            logger.error(f"Error parsing reminder lists JSON: {e}")
+            return []
     
-    async def get_all_reminders(self) -> List[Dict[str, Any]]:
-        """Get all reminders"""
-        script = '''
+    async def get_all_reminders(self, limit: int = 50, list_name: Optional[str] = None, include_completed: bool = False) -> List[Dict[str, Any]]:
+        """Get reminders. Filters to incomplete by default for performance."""
+        target_list = f'list "{list_name}"' if list_name else 'default list'
+        completed_filter = "" if include_completed else " whose completed is false"
+        # Batch fetch names in single Apple event
+        script = f'''
             tell application "Reminders"
-                set allReminders to {}
-                repeat with r in every reminder
-                    set end of allReminders to {
-                        name:name of r,
-                        id:id of r,
-                        notes:body of r,
-                        due_date:due date of r,
-                        completed:completed of r,
-                        list:name of container of r
-                    }
-                end repeat
-                return allReminders as text
+                set theList to {target_list}
+                set allNames to name of (reminders of theList{completed_filter})
+                set maxItems to {limit}
+                if (count of allNames) < maxItems then set maxItems to (count of allNames)
+                set resultList to items 1 thru maxItems of allNames
+                return resultList
             end tell
         '''
-        
+
         try:
             result = await run_applescript_async(script)
-            reminders = parse_applescript_list(result)
-            return [parse_applescript_record(reminder) for reminder in reminders]
+            # Parse AppleScript list format: "item1, item2, item3"
+            if not result.strip():
+                return []
+            names = parse_applescript_list(result)
+            return [{"name": name.strip()} for name in names if name.strip()]
         except AppleScriptError as e:
             logger.error(f"Error getting all reminders: {e}")
             return []
     
-    async def search_reminders(self, search_text: str) -> List[Dict[str, Any]]:
-        """Search for reminders matching text"""
+    async def search_reminders(self, search_text: str, limit: int = 50) -> List[Dict[str, Any]]:
+        """Search for reminders matching text using server-side filtering (faster)."""
+        # Use 'whose' clause for server-side filtering - much faster than AppleScript iteration
+        from .applescript import escape_string
+        escaped_text = escape_string(search_text)
         script = f'''
             tell application "Reminders"
                 try
-                    set matchingReminders to {{}}
-                    repeat with r in every reminder
-                        if name of r contains "{search_text}" or (body of r is not missing value and body of r contains "{search_text}") then
-                            set reminderData to {{name:name of r, notes:body of r, due_date:due date of r, completed:completed of r, list:name of container of r}}
-                            copy reminderData to end of matchingReminders
-                        end if
-                    end repeat
-                    return matchingReminders
+                    set matchingNames to name of (reminders whose name contains "{escaped_text}")
+                    set maxItems to {limit}
+                    if (count of matchingNames) < maxItems then set maxItems to (count of matchingNames)
+                    if maxItems = 0 then return ""
+                    set resultList to items 1 thru maxItems of matchingNames
+                    return resultList
                 on error errMsg
                     return "ERROR:" & errMsg
                 end try
             end tell
         '''
-        
+
         try:
             result = await run_applescript_async(script)
             if result.startswith("ERROR:"):
                 logger.error(f"Error in AppleScript: {result}")
                 return []
-                
-            reminders = parse_applescript_list(result)
-            parsed_reminders = []
-            
-            for reminder in reminders:
-                reminder_dict = parse_applescript_record(reminder)
-                parsed_reminders.append(reminder_dict)
-            
-            return parsed_reminders
+            if not result.strip():
+                return []
+            names = parse_applescript_list(result)
+            return [{"name": name.strip()} for name in names if name.strip()]
         except AppleScriptError as e:
             logger.error(f"Error searching reminders: {e}")
             return []
@@ -208,6 +211,73 @@ class RemindersModule:
                 "message": str(e)
             }
     
+    async def delete_completed_reminders(self, list_name: Optional[str] = None, batch_size: int = 10) -> Dict[str, Any]:
+        """Delete completed reminders in batches. Returns count deleted."""
+        target_list = f'list "{list_name}"' if list_name else 'default list'
+        script = f'''
+            tell application "Reminders"
+                try
+                    set theList to {target_list}
+                    set completedOnes to (reminders of theList whose completed is true)
+                    set totalCount to count of completedOnes
+                    set deleteCount to {batch_size}
+                    if totalCount < deleteCount then set deleteCount to totalCount
+
+                    repeat with i from 1 to deleteCount
+                        delete item 1 of completedOnes
+                        -- Refresh the list after each delete
+                        set completedOnes to (reminders of theList whose completed is true)
+                    end repeat
+
+                    return "SUCCESS:" & deleteCount & " deleted, " & (totalCount - deleteCount) & " remaining"
+                on error errMsg
+                    return "ERROR:" & errMsg
+                end try
+            end tell
+        '''
+
+        try:
+            result = await run_applescript_async(script)
+            success = result.startswith("SUCCESS:")
+            return {
+                "success": success,
+                "message": result.replace("SUCCESS:", "").replace("ERROR:", "")
+            }
+        except AppleScriptError as e:
+            logger.error(f"Error deleting completed reminders: {e}")
+            return {"success": False, "message": str(e)}
+
+    async def get_completed_count(self, list_name: Optional[str] = None) -> Dict[str, Any]:
+        """Get count of completed reminders in a list."""
+        target_list = f'list "{list_name}"' if list_name else 'default list'
+        script = f'''
+            tell application "Reminders"
+                try
+                    set theList to {target_list}
+                    set completedCount to count of (reminders of theList whose completed is true)
+                    set incompleteCount to count of (reminders of theList whose completed is false)
+                    return "completed:" & completedCount & ",incomplete:" & incompleteCount
+                on error errMsg
+                    return "ERROR:" & errMsg
+                end try
+            end tell
+        '''
+
+        try:
+            result = await run_applescript_async(script)
+            if result.startswith("ERROR:"):
+                return {"success": False, "message": result.replace("ERROR:", "")}
+            # Parse "completed:X,incomplete:Y"
+            parts = dict(p.split(":") for p in result.split(","))
+            return {
+                "success": True,
+                "completed": int(parts.get("completed", 0)),
+                "incomplete": int(parts.get("incomplete", 0))
+            }
+        except AppleScriptError as e:
+            logger.error(f"Error getting completed count: {e}")
+            return {"success": False, "message": str(e)}
+
     async def get_reminders_from_list_by_id(self, list_id: str, props: Optional[List[str]] = None) -> List[Dict[str, Any]]:
         """Get reminders from a specific list by ID"""
         if not props:

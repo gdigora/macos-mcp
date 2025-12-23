@@ -137,16 +137,36 @@ async def search_emails(query: str, limit: int = 10) -> List[Dict[str, Any]]:
 async def create_reminder(reminder: Reminder) -> str:
     """Create a new reminder"""
     return await reminders_module.create_reminder(
-        title=reminder.title,
+        name=reminder.title,
         notes=reminder.notes,
         due_date=reminder.due_date,
         list_name=reminder.list_name
     )
 
 @mcp.tool()
+async def list_reminder_lists() -> List[Dict[str, Any]]:
+    """Get all reminder lists with their reminder counts"""
+    return await reminders_module.get_all_lists()
+
+@mcp.tool()
+async def list_reminders(limit: int = 50, list_name: Optional[str] = None, include_completed: bool = False) -> List[Dict[str, Any]]:
+    """Get reminders. By default returns incomplete reminders only (faster with large lists)."""
+    return await reminders_module.get_all_reminders(limit=limit, list_name=list_name, include_completed=include_completed)
+
+@mcp.tool()
 async def search_reminders(query: str) -> List[Dict[str, Any]]:
-    """Search for reminders containing the given text"""
+    """Search for reminders containing the given text in name or notes"""
     return await reminders_module.search_reminders(query)
+
+@mcp.tool()
+async def get_reminder_stats(list_name: Optional[str] = None) -> Dict[str, Any]:
+    """Get count of completed vs incomplete reminders in a list"""
+    return await reminders_module.get_completed_count(list_name)
+
+@mcp.tool()
+async def delete_completed_reminders(list_name: Optional[str] = None, batch_size: int = 10) -> Dict[str, Any]:
+    """Delete completed reminders in batches. Use repeatedly to clear large backlogs."""
+    return await reminders_module.delete_completed_reminders(list_name, batch_size)
 
 # Calendar Tools
 @mcp.tool()
